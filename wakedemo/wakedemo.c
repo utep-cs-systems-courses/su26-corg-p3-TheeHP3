@@ -29,6 +29,9 @@ char gameStarted = 0;
 
 char currentQuestion = 0;
 
+char gameOver = 0;
+char gameWon = 0;
+
 char lives = 3;
 
 char waitingForRelease = 0;
@@ -129,6 +132,34 @@ void playWrongSound()
   buzzer_set_period(0);
 }
 
+void playGameOverSound()
+{
+  buzzer_set_period(5000);
+
+  __delay_cycles(1000000);
+
+  buzzer_set_period(0);
+}
+
+void playWinSound()
+{
+  buzzer_set_period(1500);
+  __delay_cycles(200000);
+
+  buzzer_set_period(0);
+  __delay_cycles(50000);
+
+  buzzer_set_period(1200);
+  __delay_cycles(200000);
+
+  buzzer_set_period(0);
+  __delay_cycles(50000);
+
+  buzzer_set_period(900);
+  __delay_cycles(300000);
+
+  buzzer_set_period(0);
+}
 /*------------------------------------------------*/
 /*               LCD Drawing                     */
 /*------------------------------------------------*/
@@ -209,21 +240,64 @@ void drawQuestionScreen()
                 COLOR_BLACK);
 }
 
+void drawGameOverScreen()
+{
+  clearScreen(COLOR_BLACK);
+
+  drawString5x7(25,
+                60,
+                "GAME OVER",
+                COLOR_RED,
+                COLOR_BLACK);
+
+  drawString5x7(20,
+                80,
+                "Try Again!",
+                COLOR_WHITE,
+                COLOR_BLACK);
+}
+
+void drawWinScreen()
+{
+  clearScreen(COLOR_BLUE);
+
+  drawString5x7(35,
+                60,
+                "YOU WIN",
+                COLOR_YELLOW,
+                COLOR_BLUE);
+
+  drawString5x7(20,
+                80,
+                "Great Job!",
+                COLOR_WHITE,
+                COLOR_BLUE);
+}
+
 void redrawGame()
 {
-  if(gameStarted)
+  if(gameOver)
+    drawGameOverScreen();
+
+  else if(gameWon)
+    drawWinScreen();
+
+  else if(gameStarted)
     drawQuestionScreen();
+
   else
     drawStartScreen();
 }
-
 /*------------------------------------------------*/
 /*             Answer Processing                 */
 /*------------------------------------------------*/
 
 void processAnswer(char answer)
 {
-  if (waitingForRelease)
+  if(waitingForRelease)
+    return;
+
+  if(gameOver || gameWon)
     return;
 
   waitingForRelease = 1;
@@ -232,8 +306,18 @@ void processAnswer(char answer)
   {
     playCorrectSound();
 
-    if(currentQuestion < 2)
+    /*
+      Check whether this was the final question.
+    */
+    if(currentQuestion == 2)
+    {
+      gameWon = 1;
+      playWinSound();
+    }
+    else
+    {
       currentQuestion++;
+    }
 
     redrawScreen = 1;
   }
@@ -243,6 +327,15 @@ void processAnswer(char answer)
 
     if(lives > 0)
       lives--;
+
+    /*
+      Player has lost all lives.
+    */
+    if(lives == 0)
+    {
+      gameOver = 1;
+      playGameOverSound();
+    }
 
     redrawScreen = 1;
   }
@@ -260,8 +353,7 @@ void switch_interrupt_handler()
 
   /*
     No buttons are currently pressed.
-    This means the player has released the
-    previous answer button.
+    This releases the button lockout.
   */
   if(!switches)
   {
@@ -270,10 +362,16 @@ void switch_interrupt_handler()
   }
 
   /*
-    Don't accept another answer until the
-    previous button has been released.
+    Ignore button presses while waiting for
+    the previous button to be released.
   */
   if(waitingForRelease)
+    return;
+
+  /*
+    Do not accept answers after the game ends.
+  */
+  if(gameOver || gameWon)
     return;
 
   /*
@@ -284,6 +382,7 @@ void switch_interrupt_handler()
     gameStarted = 1;
     redrawScreen = 1;
     waitingForRelease = 1;
+
     return;
   }
 
@@ -298,8 +397,7 @@ void switch_interrupt_handler()
 
   else if(switches & SW4)
     processAnswer(4);
-}
-  
+} 
 
 /*------------------------------------------------*/
 /*      Part 2 begins immediately after here      */
