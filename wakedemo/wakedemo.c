@@ -2,10 +2,11 @@
 #include <libTimer.h>
 #include "lcdutils.h"
 #include "lcddraw.h"
+#include "buzzer.h"
 
-/* --------------------------------------------------------- */
-/*                  DO NOT TOUCH P1.0 (LCD)                  */
-/* --------------------------------------------------------- */
+/*------------------------------------------------*/
+/*                 Hardware Defines                */
+/*------------------------------------------------*/
 
 #define LED BIT6
 
@@ -16,233 +17,369 @@
 
 #define SWITCHES (SW1 | SW2 | SW3 | SW4)
 
-/* --------------------------------------------------------- */
-/*                  Game Variables                           */
-/* --------------------------------------------------------- */
+/*------------------------------------------------*/
+/*               Game Variables                   */
+/*------------------------------------------------*/
 
 int switches = 0;
 
 char redrawScreen = 1;
 
-int gameStarted = 0;
+char gameStarted = 0;
 
-int currentQuestion = 0;
+char currentQuestion = 0;
 
-int lives = 3;
+char lives = 3;
 
-/* --------------------------------------------------------- */
-/*                  Question Data                            */
-/* --------------------------------------------------------- */
+char waitingForRelease = 0;
+
+/* Correct answer for each question
+   (1=S1, 2=S2, 3=S3, 4=S4) */
+
+char correctAnswers[] = {
+  1,
+  1,
+  1
+};
+
+/*------------------------------------------------*/
+/*                 Quiz Data                      */
+/*------------------------------------------------*/
 
 char *questions[] = {
-    "Question 1",
-    "Question 2",
-    "Question 3"
+  "Question 1",
+  "Question 2",
+  "Question 3"
 };
 
 char *questionInfo[] = {
-    "The answer is 1",
-    "The answer is 1",
-    "The answer is 1"
+  "The answer is 1",
+  "The answer is 1",
+  "The answer is 1"
 };
 
 char *answers[][4] = {
-    {"S1: Answer 1",
-     "S2: Answer 2",
-     "S3: Answer 3",
-     "S4: Answer 4"},
 
-    {"S1: Answer 1",
-     "S2: Answer 2",
-     "S3: Answer 3",
-     "S4: Answer 4"},
+  {
+    "S1: Answer 1",
+    "S2: Answer 2",
+    "S3: Answer 3",
+    "S4: Answer 4"
+  },
 
-    {"S1: Answer 1",
-     "S2: Answer 2",
-     "S3: Answer 3",
-     "S4: Answer 4"}
+  {
+    "S1: Answer 1",
+    "S2: Answer 2",
+    "S3: Answer 3",
+    "S4: Answer 4"
+  },
+
+  {
+    "S1: Answer 1",
+    "S2: Answer 2",
+    "S3: Answer 3",
+    "S4: Answer 4"
+  }
+
 };
 
-/* --------------------------------------------------------- */
-/*                  Switch Code                              */
-/* --------------------------------------------------------- */
+/*------------------------------------------------*/
+/*            Switch Initialization              */
+/*------------------------------------------------*/
 
 static char switch_update_interrupt_sense()
 {
-    char p2val = P2IN;
+  char p2val = P2IN;
 
-    P2IES |= (p2val & SWITCHES);
-    P2IES &= (p2val | ~SWITCHES);
+  P2IES |= (p2val & SWITCHES);
+  P2IES &= (p2val | ~SWITCHES);
 
-    return p2val;
+  return p2val;
 }
 
 void switch_init()
 {
-    P2REN |= SWITCHES;
-    P2IE |= SWITCHES;
-    P2OUT |= SWITCHES;
-    P2DIR &= ~SWITCHES;
+  P2REN |= SWITCHES;
+  P2IE  |= SWITCHES;
+  P2OUT |= SWITCHES;
+  P2DIR &= ~SWITCHES;
 
-    switch_update_interrupt_sense();
+  switch_update_interrupt_sense();
 }
 
-void switch_interrupt_handler()
+/*------------------------------------------------*/
+/*             Sound Helper Functions            */
+/*------------------------------------------------*/
+
+void playCorrectSound()
 {
-    char p2val = switch_update_interrupt_sense();
+  buzzer_set_period(1200);
 
-    switches = ~p2val & SWITCHES;
+  __delay_cycles(200000);
 
-    /* Start game on first button press */
-
-    if (!gameStarted && switches)
-    {
-        gameStarted = 1;
-        redrawScreen = 1;
-    }
+  buzzer_set_period(0);
 }
 
-/* --------------------------------------------------------- */
-/*                  LCD Drawing                              */
-/* --------------------------------------------------------- */
+void playWrongSound()
+{
+  buzzer_set_period(4000);
+
+  __delay_cycles(250000);
+
+  buzzer_set_period(0);
+}
+
+/*------------------------------------------------*/
+/*               LCD Drawing                     */
+/*------------------------------------------------*/
 
 void drawStartScreen()
 {
-    clearScreen(COLOR_BLUE);
+  clearScreen(COLOR_BLUE);
 
-    drawString5x7(20,20,
-                  "QUIZ GAME",
-                  COLOR_WHITE,
-                  COLOR_BLUE);
+  drawString5x7(24,
+                20,
+                "QUIZ GAME",
+                COLOR_WHITE,
+                COLOR_BLUE);
 
-    drawString5x7(8,50,
-                  "Press Any Button",
-                  COLOR_WHITE,
-                  COLOR_BLUE);
+  drawString5x7(8,
+                60,
+                "Press Any Button",
+                COLOR_WHITE,
+                COLOR_BLUE);
 }
 
-void drawQuestion()
+void drawQuestionScreen()
 {
-    char livesText[10];
+  char lifeString[9];
 
-    clearScreen(COLOR_BLACK);
+  clearScreen(COLOR_BLACK);
 
-    livesText[0] = 'L';
-    livesText[1] = 'i';
-    livesText[2] = 'v';
-    livesText[3] = 'e';
-    livesText[4] = 's';
-    livesText[5] = ':';
-    livesText[6] = ' ';
-    livesText[7] = '0' + lives;
-    livesText[8] = '\0';
+  lifeString[0]='L';
+  lifeString[1]='i';
+  lifeString[2]='v';
+  lifeString[3]='e';
+  lifeString[4]='s';
+  lifeString[5]=':';
+  lifeString[6]=' ';
+  lifeString[7]='0'+lives;
+  lifeString[8]='\0';
 
-    drawString5x7(5,
-                  5,
-                  livesText,
-                  COLOR_GREEN,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                2,
+                lifeString,
+                COLOR_GREEN,
+                COLOR_BLACK);
 
-    drawString5x7(5,
-                  25,
-                  questions[currentQuestion],
-                  COLOR_WHITE,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                22,
+                questions[currentQuestion],
+                COLOR_WHITE,
+                COLOR_BLACK);
 
-    drawString5x7(5,
-                  40,
-                  questionInfo[currentQuestion],
-                  COLOR_YELLOW,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                36,
+                questionInfo[currentQuestion],
+                COLOR_YELLOW,
+                COLOR_BLACK);
 
-    drawString5x7(5,
-                  70,
-                  answers[currentQuestion][0],
-                  COLOR_WHITE,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                64,
+                answers[currentQuestion][0],
+                COLOR_WHITE,
+                COLOR_BLACK);
 
-    drawString5x7(5,
-                  85,
-                  answers[currentQuestion][1],
-                  COLOR_WHITE,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                80,
+                answers[currentQuestion][1],
+                COLOR_WHITE,
+                COLOR_BLACK);
 
-    drawString5x7(5,
-                  100,
-                  answers[currentQuestion][2],
-                  COLOR_WHITE,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                96,
+                answers[currentQuestion][2],
+                COLOR_WHITE,
+                COLOR_BLACK);
 
-    drawString5x7(5,
-                  115,
-                  answers[currentQuestion][3],
-                  COLOR_WHITE,
-                  COLOR_BLACK);
+  drawString5x7(2,
+                112,
+                answers[currentQuestion][3],
+                COLOR_WHITE,
+                COLOR_BLACK);
 }
 
 void redrawGame()
 {
-    if (!gameStarted)
-        drawStartScreen();
-    else
-        drawQuestion();
+  if(gameStarted)
+    drawQuestionScreen();
+  else
+    drawStartScreen();
 }
 
-/* --------------------------------------------------------- */
-/*          Watchdog Timer Interrupt Handler                 */
-/* --------------------------------------------------------- */
+/*------------------------------------------------*/
+/*             Answer Processing                 */
+/*------------------------------------------------*/
+
+void processAnswer(char answer)
+{
+  if (waitingForRelease)
+    return;
+
+  waitingForRelease = 1;
+
+  if(answer == correctAnswers[currentQuestion])
+  {
+    playCorrectSound();
+
+    if(currentQuestion < 2)
+      currentQuestion++;
+
+    redrawScreen = 1;
+  }
+  else
+  {
+    playWrongSound();
+
+    if(lives > 0)
+      lives--;
+
+    redrawScreen = 1;
+  }
+}
+
+/*------------------------------------------------*/
+/*          Switch Interrupt Handler             */
+/*------------------------------------------------*/
+
+void switch_interrupt_handler()
+{
+  char p2val = switch_update_interrupt_sense();
+
+  switches = ~p2val & SWITCHES;
+
+  /*
+    No buttons are currently pressed.
+    This means the player has released the
+    previous answer button.
+  */
+  if(!switches)
+  {
+    waitingForRelease = 0;
+    return;
+  }
+
+  /*
+    Don't accept another answer until the
+    previous button has been released.
+  */
+  if(waitingForRelease)
+    return;
+
+  /*
+    Start the game.
+  */
+  if(!gameStarted)
+  {
+    gameStarted = 1;
+    redrawScreen = 1;
+    waitingForRelease = 1;
+    return;
+  }
+
+  if(switches & SW1)
+    processAnswer(1);
+
+  else if(switches & SW2)
+    processAnswer(2);
+
+  else if(switches & SW3)
+    processAnswer(3);
+
+  else if(switches & SW4)
+    processAnswer(4);
+}
+  
+
+/*------------------------------------------------*/
+/*      Part 2 begins immediately after here      */
+/*------------------------------------------------*/
 
 void wdt_c_handler()
 {
-    /* Nothing timed yet.
-       We simply keep the framework your professor provided. */
+
 }
 
-/* --------------------------------------------------------- */
-/*                      Main                                 */
-/* --------------------------------------------------------- */
+
+/*------------------------------------------------*/
+/*                     Main                       */
+/*------------------------------------------------*/
 
 void main()
 {
-    P1DIR |= LED;
-    P1OUT |= LED;
+  /*
+    Initialize the green LED.
+    P1.0 is reserved for the LCD, so we use P1.6.
+  */
+  P1DIR |= LED;
+  P1OUT |= LED;
 
-    configureClocks();
+  configureClocks();
 
-    lcd_init();
+  lcd_init();
 
-    switch_init();
+  buzzer_init();
+  buzzer_set_period(0);
 
-    enableWDTInterrupts();
+  switch_init();
 
-    or_sr(0x8);
+  enableWDTInterrupts();
 
-    while (1)
+  or_sr(0x8);
+
+  //Main game loop.
+  while(1)
+  {
+    // Only redraw the LCD when something has changed.
+    if(redrawScreen)
     {
-        if (redrawScreen)
-        {
-            redrawScreen = 0;
-            redrawGame();
-        }
+      redrawScreen = 0;
 
-        P1OUT &= ~LED;
-
-        or_sr(0x10);
-
-        P1OUT |= LED;
+      redrawGame();
     }
+
+    /*
+      Turn LED off before putting CPU to sleep.
+    */
+    P1OUT &= ~LED;
+
+    /*
+      Turn CPU off while keeping interrupts enabled.
+      A button interrupt will wake the CPU.
+    */
+    or_sr(0x10);
+
+    /*
+      Turn LED back on after waking.
+    */
+    P1OUT |= LED;
+  }
 }
 
-/* --------------------------------------------------------- */
-/*             Port 2 Interrupt                              */
-/* --------------------------------------------------------- */
+
+/*------------------------------------------------*/
+/*             Port 2 Interrupt                  */
+/*------------------------------------------------*/
 
 void __interrupt_vec(PORT2_VECTOR) Port_2()
 {
-    if (P2IFG & SWITCHES)
-    {
-        P2IFG &= ~SWITCHES;
+  //Check whether one of our four buttons caused the interrupt.
+  if(P2IFG & SWITCHES)
+  {
+    //Clear the interrupt flags.
+    P2IFG &= ~SWITCHES;
 
-        switch_interrupt_handler();
-    }
+    //Process the button press.
+    switch_interrupt_handler();
+  }
 }
